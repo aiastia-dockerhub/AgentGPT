@@ -141,10 +141,10 @@ class AutonomousAgent {
       if (!env.NEXT_PUBLIC_FF_MOCK_MODE_ENABLED) {
         await testConnection(this.modelSettings);
       }
-      return await AgentService.startAgent(this.modelSettings, this.goal);
+      return await AgentService.startGoalAgent(this.modelSettings, this.goal);
     }
 
-    const res = await axios.post(`/api/chain`, {
+    const res = await axios.post(`/api/start`, {
       modelSettings: this.modelSettings,
       goal: this.goal,
     });
@@ -158,7 +158,7 @@ class AutonomousAgent {
     result: string
   ): Promise<string[]> {
     if (this.shouldRunClientSide()) {
-      return await AgentService.createAgent(
+      return await AgentService.createTasksAgent(
         this.modelSettings,
         this.goal,
         this.tasks,
@@ -182,7 +182,7 @@ class AutonomousAgent {
 
   async executeTask(task: string): Promise<string> {
     if (this.shouldRunClientSide()) {
-      return await AgentService.executeAgent(
+      return await AgentService.executeTaskAgent(
         this.modelSettings,
         this.goal,
         task
@@ -224,7 +224,7 @@ class AutonomousAgent {
       type: "system",
       value:
         this.modelSettings.customApiKey !== ""
-          ? `This agent has been running for too long (50 Loops). To save your wallet this agent is shutting down. In the future, the number of iterations will be configurable.`
+          ? `This agent has maxed out on loops. To save your wallet, this agent is shutting down. You can configure the number of loops in the advanced settings.`
           : "We're sorry, because this is a demo, we cannot have our agents running for too long. Note, if you desire longer runs, please provide your own API key in Settings. Shutting down.",
     });
   }
