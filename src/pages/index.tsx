@@ -7,7 +7,7 @@ import ChatWindow from "../components/ChatWindow";
 import Drawer from "../components/Drawer";
 import Input from "../components/Input";
 import Button from "../components/Button";
-import { FaRobot, FaStar } from "react-icons/fa";
+import { FaRobot, FaStar, FaPlay } from "react-icons/fa";
 import PopIn from "../components/motions/popin";
 import { VscLoading } from "react-icons/vsc";
 import AutonomousAgent from "../components/AutonomousAgent";
@@ -16,7 +16,7 @@ import HelpDialog from "../components/HelpDialog";
 import { SettingsDialog } from "../components/SettingsDialog";
 import { TaskWindow } from "../components/TaskWindow";
 import { useAuth } from "../hooks/useAuth";
-import type { Message } from "../types/agentTypes";
+import type { AgentPlaybackControl, Message } from "../types/agentTypes";
 import { useAgent } from "../hooks/useAgent";
 import { isEmptyOrBlank } from "../utils/whitespace";
 import {
@@ -24,7 +24,7 @@ import {
   useAgentStore,
   resetAllMessageSlices,
 } from "../components/stores";
-import { isTask } from "../types/agentTypes";
+import { isTask, AGENT_PLAY } from "../types/agentTypes";
 import { serverSideTranslations } from "next-i18next/serverSideTranslations";
 import { useSettings } from "../hooks/useSettings";
 
@@ -38,7 +38,10 @@ const Home: NextPage = () => {
 
   const setAgent = useAgentStore.use.setAgent();
   const isAgentStopped = useAgentStore.use.isAgentStopped();
+  const isAgentPaused = useAgentStore.use.isAgentPaused();
+  const updateIsAgentPaused = useAgentStore.use.updateIsAgentPaused();
   const updateIsAgentStopped = useAgentStore.use.updateIsAgentStopped();
+  const agentMode = useAgentStore.use.agentMode();
   const agent = useAgentStore.use.agent();
 
   const { session, status } = useAuth();
@@ -81,6 +84,14 @@ const Home: NextPage = () => {
     addMessage(message);
   };
 
+  const handlePause = (opts: {
+    agentPlaybackControl?: AgentPlaybackControl;
+  }) => {
+    if (opts.agentPlaybackControl !== undefined) {
+      updateIsAgentPaused(opts.agentPlaybackControl);
+    }
+  };
+
   const disableDeployAgent =
     agent != null || isEmptyOrBlank(name) || isEmptyOrBlank(goalInput);
 
@@ -89,8 +100,10 @@ const Home: NextPage = () => {
       name.trim(),
       goalInput.trim(),
       handleAddMessage,
+      handlePause,
       () => setAgent(null),
       settingsModel.settings,
+      agentMode,
       session ?? undefined
     );
     setAgent(newAgent);
@@ -99,21 +112,34 @@ const Home: NextPage = () => {
     newAgent?.run().then(console.log).catch(console.error);
   };
 
+  const handleContinue = () => {
+    if (!agent) {
+      return;
+    }
+
+    agent.updatePlayBackControl(AGENT_PLAY);
+    updateIsAgentPaused(agent.playbackControl);
+    agent.updateIsRunning(true);
+    agent.run().then(console.log).catch(console.error);
+  };
+
   const handleKeyPress = (
     e:
       | React.KeyboardEvent<HTMLInputElement>
       | React.KeyboardEvent<HTMLTextAreaElement>
   ) => {
-    if (e.key === "Enter" && !disableDeployAgent) {
-      if (!e.shiftKey) {
-        // Only Enter is pressed, execute the function
-        handleNewGoal();
+    // Only Enter is pressed, execute the function
+    if (e.key === "Enter" && !disableDeployAgent && !e.shiftKey) {
+      if (isAgentPaused) {
+        handleContinue();
       }
+      handleNewGoal();
     }
   };
 
   const handleStopAgent = () => {
     agent?.stopAgent();
+    updateIsAgentStopped();
   };
 
   const proTitle = (
@@ -127,6 +153,25 @@ const Home: NextPage = () => {
     isAgentStopped &&
     messages.length &&
     !hasSaved;
+
+  const firstButton =
+    isAgentPaused && !isAgentStopped ? (
+      <Button ping disabled={!isAgentPaused} onClick={handleContinue}>
+        <FaPlay size={20} />
+        <span className="ml-2">{t("Continue")}</span>
+      </Button>
+    ) : (
+      <Button disabled={disableDeployAgent} onClick={handleNewGoal}>
+        {agent == null ? (
+          t("Deploy Agent")
+        ) : (
+          <>
+            <VscLoading className="animate-spin" size={20} />
+            <span className="ml-2">{t("Running")}</span>
+          </>
+        )}
+      </Button>
+    );
 
   return (
     <DefaultLayout>
@@ -146,11 +191,11 @@ const Home: NextPage = () => {
         />
         <div
           id="content"
-          className="z-10 flex min-h-screen w-full items-center justify-center p-2 px-2 sm:px-4 md:px-10"
+          className="z-10 flex min-h-screen w-full items-center justify-center p-2 sm:px-4 md:px-10"
         >
           <div
             id="layout"
-            className="flex h-full w-full max-w-screen-lg flex-col items-center justify-between gap-3 py-5 md:justify-center"
+            className="flex h-full w-full max-w-screen-xl flex-col items-center justify-between gap-1 py-2 sm:gap-3 sm:py-5 md:justify-center"
           >
             <div
               id="title"
@@ -163,8 +208,8 @@ const Home: NextPage = () => {
                 <span className="text-4xl font-bold text-white xs:text-5xl sm:text-6xl">
                   GPT
                 </span>
-                <PopIn delay={0.5} className="sm:absolute sm:right-0 sm:top-2">
-                  <Badge>Beta 🚀</Badge>
+                <PopIn delay={0.5}>
+                  <Badge>{t("Beta 🚀")}</Badge>
                 </PopIn>
               </div>
               <div className="mt-1 text-center font-mono text-[0.7em] font-bold text-white">
@@ -194,11 +239,12 @@ const Home: NextPage = () => {
                     : undefined
                 }
                 scrollToBottom
+                displaySettings
               />
               {tasks.length > 0 && <TaskWindow />}
             </Expand>
 
-            <div className="flex w-full flex-col gap-2 sm:m-4 ">
+            <div className="flex w-full flex-col gap-2 md:m-4 ">
               <Expand delay={1.2}>
                 <Input
                   inputRef={nameInputRef}
@@ -234,16 +280,7 @@ const Home: NextPage = () => {
               </Expand>
             </div>
             <Expand delay={1.4} className="flex gap-2">
-              <Button disabled={disableDeployAgent} onClick={handleNewGoal}>
-                {agent == null ? (
-                  t("Deploy Agent")
-                ) : (
-                  <>
-                    <VscLoading className="animate-spin" size={20} />
-                    <span className="ml-2">{t("Running")}</span>
-                  </>
-                )}
-              </Button>
+              {firstButton}
               <Button
                 disabled={agent === null}
                 onClick={handleStopAgent}
